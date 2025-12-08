@@ -23,11 +23,12 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 @Component
 public class JavaDockerCodeSandbox {
 
-    private static String className;
+//    private static String className;
     private static final ArrayList<String> allOutputs = new ArrayList<>(); //用于存放输出用例
     private static final String DOCKER_IMAGE = "docker.xuanyuan.me/openjdk:11";
     private static final long TIME_OUT = 3000L; // 3秒超时
@@ -40,21 +41,24 @@ public class JavaDockerCodeSandbox {
         List<String> inputList = executeCodeRequest.getInputList();
 
         //获取类名
+
         JavaParser javaParser = new JavaParser();
         ParseResult<CompilationUnit> parseResult = javaParser.parse(code);
         CompilationUnit cu = parseResult.getResult().get();
-        cu.findAll(ClassOrInterfaceDeclaration.class).stream()
+
+        String className = cu.findAll(ClassOrInterfaceDeclaration.class).stream()
                 .filter(ClassOrInterfaceDeclaration::isPublic)
-                .forEach(classOrInterfaceDeclaration -> {
-                    className = classOrInterfaceDeclaration.getNameAsString();
-                });
+                .filter(c -> !c.isInterface())
+                .map(classOrInterfaceDeclaration -> classOrInterfaceDeclaration.getNameAsString())
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("未找到Public类"));;
 
 
-        ExecuteCodeResponse executeCodeResponse = executeCode(executeCodeRequest);
+        ExecuteCodeResponse executeCodeResponse = executeCode(executeCodeRequest, className);
         return executeCodeResponse;
     }
 
-    private static ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) throws IOException, InterruptedException {
+    private static ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest, String className) throws IOException, InterruptedException {
 
         List<String> inputList = executeCodeRequest.getInputList();
         String code = executeCodeRequest.getCode();
