@@ -8,6 +8,7 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.lsl.lslojcodesandbox.model.ExecuteCodeRequest;
 import com.lsl.lslojcodesandbox.model.ExecuteCodeResponse;
+import com.lsl.lslojcodesandbox.model.ExecuteMessage;
 import com.lsl.lslojcodesandbox.model.JudgeInfo;
 import lombok.SneakyThrows;
 import org.springframework.stereotype.Component;
@@ -34,10 +35,9 @@ public class JavaNativeCodeSandBox {
         String code = executeCodeRequest.getCode();
 
         // 1. 安全检查（黑名单机制）
-        // 如果是本地测试信任代码，可以注释掉这一段；如果是对外服务，这还远远不够
         checkCodeSecurity(code);
 
-        // 2. 解析类名 (修复：局部变量化)
+        // 2. 解析类名
         JavaParser javaParser = new JavaParser();
         ParseResult<CompilationUnit> parseResult = javaParser.parse(code);
         CompilationUnit cu = parseResult.getResult().orElseThrow(() -> new RuntimeException("解析代码失败"));
@@ -49,7 +49,7 @@ public class JavaNativeCodeSandBox {
                 .map(ClassOrInterfaceDeclaration::getNameAsString)
                 .orElseThrow(() -> new RuntimeException("未找到可执行的Public类"));
 
-        // 3. 调用执行逻辑 (修复：显式传递参数)
+        // 3. 调用执行逻辑
         return executeCode(executeCodeRequest, className);
     }
 
@@ -60,7 +60,7 @@ public class JavaNativeCodeSandBox {
         List<String> inputList = executeCodeRequest.getInputList();
         String code = executeCodeRequest.getCode();
         
-        // 修复：使用局部变量收集输出
+        // 使用局部变量收集输出
         List<String> outputList = new ArrayList<>();
         
         ExecuteCodeResponse executeCodeResponse = new ExecuteCodeResponse();
@@ -262,11 +262,5 @@ public class JavaNativeCodeSandBox {
         }
     }
 
-    // 内部类：用于封装进程执行信息
-    @lombok.Data
-    private static class ExecuteMessage {
-        private Integer exitValue;
-        private String message;
-        private String errorMessage;
-    }
+
 }
