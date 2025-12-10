@@ -2,19 +2,14 @@ package com.lsl.lslojcodesandbox;
 
 import cn.hutool.core.io.FileUtil;
 import com.github.dockerjava.api.DockerClient;
-import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.*;
 import com.github.dockerjava.api.model.*;
-import com.github.dockerjava.core.DefaultDockerClientConfig;
-import com.github.dockerjava.core.DockerClientBuilder;
-import com.github.dockerjava.core.DockerClientConfig;
 import com.github.dockerjava.core.command.ExecStartResultCallback;
-import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
-import com.github.dockerjava.transport.DockerHttpClient;
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ParseResult;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.lsl.lslojcodesandbox.Utils.ContainerPool;
 import com.lsl.lslojcodesandbox.Utils.ProcessUtils;
 import com.lsl.lslojcodesandbox.model.ExecuteCodeRequest;
 import com.lsl.lslojcodesandbox.model.ExecuteCodeResponse;
@@ -22,6 +17,7 @@ import com.lsl.lslojcodesandbox.model.JudgeInfo;
 import lombok.SneakyThrows;
 import org.springframework.stereotype.Component;
 
+import javax.annotation.Resource;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -29,7 +25,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
@@ -37,12 +32,14 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class JavaDockerCodeSandbox {
 
-    // 指定使用的镜像 Amazon Corretto 11
+    @Resource
+    private ContainerPool containerPool;
+
     private static final String DOCKER_IMAGE = "oj-sandbox-java:1.0";
     private static final long TIME_OUT = 5000L;
 
     @SneakyThrows
-    public static ExecuteCodeResponse execute(ExecuteCodeRequest executeCodeRequest) {
+    public ExecuteCodeResponse execute(ExecuteCodeRequest executeCodeRequest) {
         String code = executeCodeRequest.getCode();
 
         // 1. 使用 JavaParser 解析代码，动态获取类名
@@ -64,7 +61,8 @@ public class JavaDockerCodeSandbox {
     }
 
 
-    private static ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest, String className) throws IOException, InterruptedException {
+    private ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest, String className) throws IOException, InterruptedException {
+
         List<String> inputList = executeCodeRequest.getInputList();
         String code = executeCodeRequest.getCode();
 
@@ -76,15 +74,16 @@ public class JavaDockerCodeSandbox {
 
         // 1. 代码文件保存
 
-        String userDir = System.getProperty("user.dir");
-        // 存放用户代码的根目录：src/main/resources/userCode
-        String userDirPath = userDir + File.separator + "src" + File.separator + "main" + File.separator + "resources" + File.separator + "userCode";
-//        String userDirPath = System.getProperty("java.io.tmpdir") + File.separator + "oj-sandbox-files";
+//        String userDir = System.getProperty("user.dir");
+//         存放用户代码的根目录：src/main/resources/userCode
+//        String userDirPath = userDir + File.separator + "src" + File.separator + "main" + File.separator + "resources" + File.separator + "userCode";
+        String userDirPath = System.getProperty("java.io.tmpdir") + File.separator + "oj-sandbox-files";
         if (!FileUtil.exist(userDirPath)) {
             FileUtil.mkdir(userDirPath);
         }
         // 为每次请求创建一个独立的UUID目录，防止文件名冲突
-        String userPathFile = userDirPath + File.separator + UUID.randomUUID();
+        String uuid = UUID.randomUUID().toString();
+        String userPathFile = userDirPath + File.separator + uuid;
         String userPathFileName = userPathFile + File.separator + className + ".java";
         File file = FileUtil.writeUtf8String(code, userPathFileName);
 
@@ -116,61 +115,23 @@ public class JavaDockerCodeSandbox {
 
         // 3. Docker 环境准备
 
-
-        // 加载默认配置 (环境变量等)
-        DockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder().build();
-
-        // 使用 ApacheDockerHttpClient
-        DockerHttpClient httpClient = new ApacheDockerHttpClient.Builder()
-                .dockerHost(config.getDockerHost())
-                .maxConnections(100)
-                .connectionTimeout(Duration.ofSeconds(30))
-                .responseTimeout(Duration.ofSeconds(45))
-                .build();
-
-        DockerClient dockerClient = DockerClientBuilder.getInstance(config)
-                .withDockerHttpClient(httpClient)
-                .build();
-
         String containerId = null;
         long totalRunTime = 0L;
         long maxMemoryUsed = 0L;
 
         try {
-            // 配置容器资源限制 (HostConfig)
-            HostConfig hostConfig = new HostConfig();
-            hostConfig.withMemory(100 * 1024 * 1024L); // 限制内存 100MB，防止 OOM
-            hostConfig.withMemorySwap(0L);             // 禁止使用 Swap 交换分区
-            hostConfig.withCpuCount(1L);               // 限制使用 1 核 CPU
-            hostConfig.withPidsLimit(100L);            // 限制进程数，防止 Fork 炸弹攻击
+            // 从容器池中获取容器
+            containerId = containerPool.acquire();
+            DockerClient dockerClient = containerPool.getDockerClient();
 
-            // 挂载卷：将宿主机的代码目录挂载到容器内的 /app 目录
-            // 这样容器就能访问到我们在宿主机编译好的 .class 文件
-            hostConfig.setBinds(new Bind(file.getParent(), new Volume("/app")));
-
-            // 创建容器命令
-            CreateContainerResponse containerResponse = dockerClient.createContainerCmd(DOCKER_IMAGE)
-                    .withHostConfig(hostConfig)
-                    .withNetworkDisabled(true)  // 禁用网络，防止反弹 Shell 或恶意下载
-                    .withReadonlyRootfs(true)            // 只读文件系统，防止恶意修改系统文件
-                    .withAttachStdin(true)      // 开启标准输入 (为了支持 Scanner)
-                    .withAttachStdout(true)     // 开启标准输出
-                    .withAttachStderr(true)     // 开启标准错误
-                    .withTty(false)              // 开启伪终端交互
-                    .withCmd("tail", "-f", "/dev/null")
-                    .withWorkingDir("/app")           // 设置工作目录，方便直接运行 class
-                    .exec();
-
-            containerId = containerResponse.getId();
-            // 启动容器
-            dockerClient.startContainerCmd(containerId).exec();
 
             // 4. 循环执行测试用例
 
             for (String inputArgs : inputList) {
                 // 构造运行命令：java -cp /app Main
                 // 注意：这里不再通过 args 传参，而是通过 Stdin 输入流传入
-                String[] cmdArray = new String[] {"/usr/bin/time", "-v", "java", "-cp", "/app", className};
+                String containerClassPath = "/app/" + uuid;
+                String[] cmdArray = new String[] {"/usr/bin/time", "-v", "java", "-cp", containerClassPath, className};
 
                 // 创建执行命令 (Exec)
                 ExecCreateCmdResponse execCreateCmdResponse = dockerClient.execCreateCmd(containerId)
@@ -199,7 +160,22 @@ public class JavaDockerCodeSandbox {
                         }
                         super.onNext(frame);
                     }
+
+                    // 重写 onError，屏蔽 Windows npipe 噪音
+                    @Override
+                    public void onError(Throwable throwable) {
+                        // 如果是 "管道已结束" 这种无意义的异常，直接忽略，不打印日志
+                        if (throwable instanceof IOException &&
+                                (throwable.getMessage() != null &&
+                                        (throwable.getMessage().contains("管道已结束") || throwable.getMessage().contains("The pipe has been ended")))) {
+                            return;
+                        }
+
+                        // 其他真正的异常（比如网络断开、Docker 崩溃），依然交给父类打印出来
+                        super.onError(throwable);
+                    }
                 };
+
 
                 String inputContent = inputArgs + "\n";
                 InputStream inputStream = new ByteArrayInputStream(inputContent.getBytes(StandardCharsets.UTF_8));
@@ -252,17 +228,11 @@ public class JavaDockerCodeSandbox {
         } finally {
             if (containerId != null) {
                 try {
-                    // 无论成功失败，都要停止并删除容器，防止残留僵尸容器
-                    dockerClient.stopContainerCmd(containerId).exec();
-                    dockerClient.removeContainerCmd(containerId).exec();
+                    containerPool.release(containerId);
                 } catch (Exception e) {
                     // 忽略清理过程中的报错 (比如容器已经停止了)
                 }
             }
-            // 关闭 Docker 客户端连接
-            try {
-                dockerClient.close();
-            } catch (IOException e) {}
 
             // 删除生成的代码文件目录
             if (file.exists()) {

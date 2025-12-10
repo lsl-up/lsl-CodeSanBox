@@ -34,7 +34,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-@Component
+//@Component
 public class JavaDockerCodeSandbox {
 
 //    private static String className;

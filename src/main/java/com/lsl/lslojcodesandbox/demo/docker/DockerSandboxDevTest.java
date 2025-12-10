@@ -1,6 +1,7 @@
 package com.lsl.lslojcodesandbox.demo.docker;
 
 import com.lsl.lslojcodesandbox.JavaDockerCodeSandbox;
+import com.lsl.lslojcodesandbox.JavaDockerCodeSandbox_Old;
 import com.lsl.lslojcodesandbox.model.ExecuteCodeRequest;
 import com.lsl.lslojcodesandbox.model.ExecuteCodeResponse;
 
@@ -18,6 +19,7 @@ public class DockerSandboxDevTest {
         
         // 1. 准备一段符合 ACM 模式的用户代码 (A + B)
         // 注意：使用 Scanner 读取标准输入 System.in
+
         String code = "import java.util.Scanner;\n" +
                 "public class Main {\n" +
                 "    public static void main(String[] args) {\n" +
@@ -26,13 +28,16 @@ public class DockerSandboxDevTest {
                 "            int a = sc.nextInt();\n" +
                 "            int b = sc.nextInt();\n" +
                 "            int c = sc.nextInt();\n" +
+                "            try { \n" +
+                "                Thread.sleep(1000);\n" +
+                "            } catch (InterruptedException e) {}\n" +
                 "            System.out.println(\"计算结果:\" + (a + b + c));\n" +
                 "        }\n" +
                 "    }\n" +
                 "}";
 
         // 2. 构造测试用例 (两组数据)
-        List<String> inputList = Arrays.asList("1 1 2", "1 9 2");
+        List<String> inputList = Arrays.asList("5 5 5", "10 10 10");
         
         ExecuteCodeRequest request = ExecuteCodeRequest.builder()
                 .code(code)
@@ -43,9 +48,9 @@ public class DockerSandboxDevTest {
         // 3. 调用沙箱执行
         try {
             long startTime = System.currentTimeMillis();
-            
+            JavaDockerCodeSandbox javaDockerCodeSandbox = new JavaDockerCodeSandbox();
             // 直接调用静态方法进行测试
-            ExecuteCodeResponse response = JavaDockerCodeSandbox.execute(request);
+            ExecuteCodeResponse response = javaDockerCodeSandbox.execute(request);
             
             // 4. 分析结果
             System.out.println("\n-------------------------------------------");
@@ -55,8 +60,8 @@ public class DockerSandboxDevTest {
             System.out.println("运行信息: " + response.getMessage());
             
             if (response.getJudgeInfo() != null) {
-                System.out.println("Docker内存占用: " + (response.getJudgeInfo().getMemory() / 1024 / 1024) + "MB");
-                System.out.println("Docker运行时间: " + response.getJudgeInfo().getTime() + "ms");
+                System.out.println("内存占用: " + (response.getJudgeInfo().getMemory() / 1024 / 1024) + "MB");
+                System.out.println("运行时间: " + response.getJudgeInfo().getTime() + "ms");
             }
             System.out.println("📝 结果：");
             System.out.println(response.getOutputList());

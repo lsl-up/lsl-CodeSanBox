@@ -11,7 +11,11 @@ import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
 import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
@@ -29,13 +33,16 @@ public class ContainerPool {
     private static final String IMAGE = "oj-sandbox-java:1.0";
     
     // 根工作目录（所有容器共享这个挂载点）
-    private static final String ROOT_WORK_DIR = System.getProperty("user.dir") 
-            + File.separator + "src/main/resources/userCode";
+    private static final String ROOT_WORK_DIR = System.getProperty("java.io.tmpdir") + File.separator + "oj-sandbox-files";
 
     // 存放容器 ID 的阻塞队列（线程安全）
     private final BlockingQueue<String> availableContainers = new ArrayBlockingQueue<>(POOL_SIZE);
     
     private DockerClient dockerClient;
+
+    public DockerClient getDockerClient() {
+        return dockerClient;
+    }
 
     /**
      * 项目启动时自动执行：初始化车队
@@ -54,12 +61,12 @@ public class ContainerPool {
         new File(ROOT_WORK_DIR).mkdirs();
 
         // 3. 预热容器
-        System.out.println("🚗 [容器池] 正在初始化 " + POOL_SIZE + " 个容器...");
+        System.out.println("正在初始化 " + POOL_SIZE + " 个容器...");
         for (int i = 0; i < POOL_SIZE; i++) {
             String containerId = createAndStartContainer();
             availableContainers.offer(containerId);
         }
-        System.out.println("✅ [容器池] 初始化完成，" + POOL_SIZE + " 个容器已待命！");
+        System.out.println("初始化完成，" + POOL_SIZE + " 个容器已待命！");
     }
 
     /**
@@ -67,8 +74,10 @@ public class ContainerPool {
      */
     private String createAndStartContainer() {
         HostConfig hostConfig = new HostConfig();
-        hostConfig.withMemory(100 * 1024 * 1024L);
-        hostConfig.withCpuCount(1L);
+        hostConfig.withMemory(100 * 1024 * 1024L); // 限制内存 100MB，防止 OOM
+        hostConfig.withMemorySwap(0L);             // 禁止使用 Swap 交换分区
+        hostConfig.withCpuCount(1L);               // 限制使用 1 核 CPU
+        hostConfig.withPidsLimit(100L);            // 限制进程数，防止 Fork 炸弹攻击
         // 关键点：挂载总目录
         hostConfig.setBinds(new Bind(ROOT_WORK_DIR, new Volume("/app")));
 
@@ -77,7 +86,9 @@ public class ContainerPool {
                 .withNetworkDisabled(true)
                 .withReadonlyRootfs(true)
                 .withAttachStdin(true)
-                .withTty(true)
+                .withAttachStdout(true)
+                .withAttachStderr(true)
+                .withTty(false)
                 // 关键点：让容器启动后死循环空转，不要退出
                 .withCmd("tail", "-f", "/dev/null") 
                 .exec();
@@ -101,5 +112,27 @@ public class ContainerPool {
     public void release(String containerId) {
         // 这里可以加一些清理逻辑（比如清理容器内临时文件，但因为我们是只读文件系统+挂载，其实不用清）
         availableContainers.offer(containerId);
+    }
+
+    // 关闭所有容器（可选，用于应用关闭时优雅退出）
+    @PreDestroy
+    public void shutdown() throws InterruptedException {
+        System.out.println("正在关闭所有容器...");
+        List<String> remaining = new ArrayList<>();
+        availableContainers.drainTo(remaining);
+
+        for (String id : remaining) {
+            try {
+                dockerClient.stopContainerCmd(id).exec();
+                dockerClient.removeContainerCmd(id).exec();
+            } catch (Exception e) {
+                System.err.println("关闭容器失败: " + id + ", " + e.getMessage());
+            }
+        }
+        try {
+            dockerClient.close();
+        } catch (IOException e) {
+
+        }
     }
 }
