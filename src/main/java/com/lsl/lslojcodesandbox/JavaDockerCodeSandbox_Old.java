@@ -3,7 +3,9 @@ package com.lsl.lslojcodesandbox;
 import cn.hutool.core.io.FileUtil;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
-import com.github.dockerjava.api.command.*;
+import com.github.dockerjava.api.command.CreateContainerResponse;
+import com.github.dockerjava.api.command.ExecCreateCmdResponse;
+import com.github.dockerjava.api.command.StatsCmd;
 import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientBuilder;
@@ -15,30 +17,26 @@ import com.github.javaparser.JavaParser;
 import com.github.javaparser.ParseResult;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.lsl.lslojcodesandbox.Utils.ProcessUtils;
 import com.lsl.lslojcodesandbox.model.ExecuteCodeRequest;
 import com.lsl.lslojcodesandbox.model.ExecuteCodeResponse;
 import com.lsl.lslojcodesandbox.model.JudgeInfo;
 import lombok.SneakyThrows;
 import org.springframework.stereotype.Component;
 
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 
-@Component
-public class JavaDockerCodeSandbox {
+//@Component
+public class JavaDockerCodeSandbox_Old {
 
     // 指定使用的镜像 Amazon Corretto 11
-    private static final String DOCKER_IMAGE = "oj-sandbox-java:1.0";
+    private static final String DOCKER_IMAGE = "amazoncorretto:11";
     private static final long TIME_OUT = 5000L;
 
     @SneakyThrows
@@ -79,7 +77,6 @@ public class JavaDockerCodeSandbox {
         String userDir = System.getProperty("user.dir");
         // 存放用户代码的根目录：src/main/resources/userCode
         String userDirPath = userDir + File.separator + "src" + File.separator + "main" + File.separator + "resources" + File.separator + "userCode";
-//        String userDirPath = System.getProperty("java.io.tmpdir") + File.separator + "oj-sandbox-files";
         if (!FileUtil.exist(userDirPath)) {
             FileUtil.mkdir(userDirPath);
         }
@@ -139,7 +136,7 @@ public class JavaDockerCodeSandbox {
         try {
             // 配置容器资源限制 (HostConfig)
             HostConfig hostConfig = new HostConfig();
-            hostConfig.withMemory(100 * 1024 * 1024L); // 限制内存 100MB，防止 OOM
+            hostConfig.withMemory(10 * 1024 * 1024L); // 限制内存 10MB，防止 OOM
             hostConfig.withMemorySwap(0L);             // 禁止使用 Swap 交换分区
             hostConfig.withCpuCount(1L);               // 限制使用 1 核 CPU
             hostConfig.withPidsLimit(100L);            // 限制进程数，防止 Fork 炸弹攻击
@@ -156,8 +153,7 @@ public class JavaDockerCodeSandbox {
                     .withAttachStdin(true)      // 开启标准输入 (为了支持 Scanner)
                     .withAttachStdout(true)     // 开启标准输出
                     .withAttachStderr(true)     // 开启标准错误
-                    .withTty(false)              // 开启伪终端交互
-                    .withCmd("tail", "-f", "/dev/null")
+                    .withTty(true)              // 开启伪终端交互
                     .withWorkingDir("/app")           // 设置工作目录，方便直接运行 class
                     .exec();
 
@@ -165,12 +161,12 @@ public class JavaDockerCodeSandbox {
             // 启动容器
             dockerClient.startContainerCmd(containerId).exec();
 
-            // 4. 循环执行测试用例
 
+            // 4. 循环执行测试用例
             for (String inputArgs : inputList) {
                 // 构造运行命令：java -cp /app Main
                 // 注意：这里不再通过 args 传参，而是通过 Stdin 输入流传入
-                String[] cmdArray = new String[] {"/usr/bin/time", "-v", "java", "-cp", "/app", className};
+                String[] cmdArray = new String[] {"java", "-cp", "/app", className};
 
                 // 创建执行命令 (Exec)
                 ExecCreateCmdResponse execCreateCmdResponse = dockerClient.execCreateCmd(containerId)
@@ -186,6 +182,23 @@ public class JavaDockerCodeSandbox {
                 StringBuilder errorMessage = new StringBuilder();
                 StringBuilder message = new StringBuilder();
 
+                // 启动内存监控 (异步)
+                final long[] currentMemoryUsage = {0L};
+                StatsCmd statsCmd = dockerClient.statsCmd(containerId);
+                // 使用回调实时获取内存状态，取最大值
+                ResultCallback<Statistics> statsCallback = statsCmd.exec(new ResultCallback<Statistics>() {
+                    @Override
+                    public void onNext(Statistics statistics) {
+                        if (statistics.getMemoryStats() != null && statistics.getMemoryStats().getUsage() != null) {
+                            currentMemoryUsage[0] = Math.max(currentMemoryUsage[0], statistics.getMemoryStats().getUsage());
+                        }
+                    }
+                    @Override public void close() throws IOException {}
+                    @Override public void onStart(java.io.Closeable closeable) {}
+                    @Override public void onError(Throwable throwable) {}
+                    @Override public void onComplete() {}
+                });
+
                 // 启动输出流监听 (异步)
                 ExecStartResultCallback execStartResultCallback = new ExecStartResultCallback() {
                     @Override
@@ -200,6 +213,9 @@ public class JavaDockerCodeSandbox {
                         super.onNext(frame);
                     }
                 };
+
+                long testStartTime = System.currentTimeMillis();
+
 
                 String inputContent = inputArgs + "\n";
                 InputStream inputStream = new ByteArrayInputStream(inputContent.getBytes(StandardCharsets.UTF_8));
@@ -221,27 +237,24 @@ public class JavaDockerCodeSandbox {
                     }
                 }
 
+                long testEndTime = System.currentTimeMillis();
+                totalRunTime += (testEndTime - testStartTime);
+                maxMemoryUsed = Math.max(maxMemoryUsed, currentMemoryUsage[0]);
+
                 // 关闭流和监控
                 inputStream.close();
-
+                statsCmd.close();
 
                 String stderr = errorMessage.toString();
                 String stdout = message.toString();
 
-                long timeCost = ProcessUtils.extractTime(stderr);
-                long memoryCost = ProcessUtils.extractMemory(stderr);
 
-                totalRunTime += timeCost;
-                maxMemoryUsed = Math.max(maxMemoryUsed, memoryCost);
-                boolean isTimeOutputOnly = stderr.contains("Command being timed") && !stderr.contains("Exception") && !stderr.contains("Error");
-
-                if (!stderr.isEmpty() && !isTimeOutputOnly) {
+                if (!stderr.isEmpty()) {
                     executeCodeResponse.setMessage(stderr);
                     executeCodeResponse.setStatus(3);
                     break; // 遇到错误直接中断后续测试
                 } else {
                     String output = stdout.trim();
-                    System.out.println("输出结果=================" + output);
                     outputList.add(output);
                 }
             }
