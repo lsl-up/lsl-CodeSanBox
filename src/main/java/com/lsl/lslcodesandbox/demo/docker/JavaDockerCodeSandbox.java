@@ -1,4 +1,4 @@
-package com.lsl.lslojcodesandbox.demo.docker;
+package com.lsl.lslcodesandbox.demo.docker;
 
 import cn.hutool.core.io.FileUtil;
 import com.github.dockerjava.api.DockerClient;
@@ -17,11 +17,10 @@ import com.github.javaparser.JavaParser;
 import com.github.javaparser.ParseResult;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.lsl.lslojcodesandbox.model.ExecuteCodeRequest;
-import com.lsl.lslojcodesandbox.model.ExecuteCodeResponse;
-import com.lsl.lslojcodesandbox.model.JudgeInfo;
+import com.lsl.lslcodesandbox.model.ExecuteCodeRequest;
+import com.lsl.lslcodesandbox.model.ExecuteCodeResponse;
+import com.lsl.lslcodesandbox.model.JudgeInfo;
 import lombok.SneakyThrows;
-import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
 import java.io.File;

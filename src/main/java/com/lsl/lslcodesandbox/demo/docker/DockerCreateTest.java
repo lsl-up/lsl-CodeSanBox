@@ -1,4 +1,4 @@
-package com.lsl.lslojcodesandbox.demo.docker;
+package com.lsl.lslcodesandbox.demo.docker;
 
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;

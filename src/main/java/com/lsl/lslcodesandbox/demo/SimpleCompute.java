@@ -1,6 +1,4 @@
-package com.lsl.lslojcodesandbox.demo;
-
-import java.util.Scanner;
+package com.lsl.lslcodesandbox.demo;
 
 public class SimpleCompute {
     public static void main(String[] args) {

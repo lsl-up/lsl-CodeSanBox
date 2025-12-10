@@ -1,4 +1,4 @@
-package com.lsl.lslojcodesandbox.demo;
+package com.lsl.lslcodesandbox.demo;
 
 import java.util.Scanner;
 public class Main {

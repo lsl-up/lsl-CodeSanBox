@@ -1,9 +1,8 @@
-package com.lsl.lslojcodesandbox.demo.docker;
+package com.lsl.lslcodesandbox.demo.docker;
 
-import com.lsl.lslojcodesandbox.JavaDockerCodeSandbox;
-import com.lsl.lslojcodesandbox.JavaDockerCodeSandbox_Old;
-import com.lsl.lslojcodesandbox.model.ExecuteCodeRequest;
-import com.lsl.lslojcodesandbox.model.ExecuteCodeResponse;
+import com.lsl.lslcodesandbox.JavaDockerCodeSandbox;
+import com.lsl.lslcodesandbox.model.ExecuteCodeRequest;
+import com.lsl.lslcodesandbox.model.ExecuteCodeResponse;
 
 import java.util.Arrays;
 import java.util.List;

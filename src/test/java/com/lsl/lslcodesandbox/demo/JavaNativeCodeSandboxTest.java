@@ -1,9 +1,8 @@
-package com.lsl.lslojcodesandbox.demo;
+package com.lsl.lslcodesandbox.demo;
 
-import com.lsl.lslojcodesandbox.JavaDockerCodeSandbox;
-import com.lsl.lslojcodesandbox.JavaNativeCodeSandBox;
-import com.lsl.lslojcodesandbox.model.ExecuteCodeRequest;
-import com.lsl.lslojcodesandbox.model.ExecuteCodeResponse;
+import com.lsl.lslcodesandbox.JavaDockerCodeSandbox;
+import com.lsl.lslcodesandbox.model.ExecuteCodeRequest;
+import com.lsl.lslcodesandbox.model.ExecuteCodeResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 

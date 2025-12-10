@@ -1,4 +1,4 @@
-package com.lsl.lslojcodesandbox.model;
+package com.lsl.lslcodesandbox.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

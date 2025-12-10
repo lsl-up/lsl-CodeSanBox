@@ -1,8 +1,8 @@
-package com.lsl.lslojcodesandbox.controller;
+package com.lsl.lslcodesandbox.controller;
 
-import com.lsl.lslojcodesandbox.JavaNativeCodeSandBox;
-import com.lsl.lslojcodesandbox.model.ExecuteCodeRequest;
-import com.lsl.lslojcodesandbox.model.ExecuteCodeResponse;
+import com.lsl.lslcodesandbox.JavaNativeCodeSandBox;
+import com.lsl.lslcodesandbox.model.ExecuteCodeRequest;
+import com.lsl.lslcodesandbox.model.ExecuteCodeResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
